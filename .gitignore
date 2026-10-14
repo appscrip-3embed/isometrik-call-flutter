@@ -52,6 +52,15 @@ app.*.map.json
 **/android/**/GeneratedPluginRegistrant.kt
 **/android/captures/
 
+# Swift Package Manager (plugin local resolution / Xcode)
+.build/
+.swiftpm/
+# Opening ios/isometrik_flutter_call/Package.swift in Xcode creates this; do not commit.
+ios/isometrik_flutter_call/.swiftpm/
+
+# Example app build output (keeps Flutter path-plugin rsync small if copy is ever triggered)
+example/build/
+
 # iOS / macOS (Xcode user state)
 **/ios/Flutter/Flutter.framework
 **/ios/Flutter/Flutter.podspec
