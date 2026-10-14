@@ -17,8 +17,8 @@ LiveKit-first call controls to Flutter applications.
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
   # Keep in sync with flutter_webrtc’s WebRTC-SDK pin so CallKit can notify RTCAudioSession.
-  s.dependency 'WebRTC-SDK', '137.7151.04'
-  s.platform = :ios, '13.0'
+  s.dependency 'WebRTC-SDK', '150.7871.01'
+  s.platform = :ios, '17.0'
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }

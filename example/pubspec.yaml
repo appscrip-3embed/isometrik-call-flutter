@@ -53,6 +53,10 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # CocoaPods-only for this example while the plugin has no Package.swift.
+  # Avoids embedding WebRTC twice (Pods WebRTC-SDK + SPM flutter_webrtc).
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
