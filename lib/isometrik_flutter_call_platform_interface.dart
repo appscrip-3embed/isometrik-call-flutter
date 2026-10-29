@@ -77,6 +77,25 @@ abstract class IsometrikFlutterCallPlatform extends PlatformInterface {
     );
   }
 
+  /// Show the native incoming UI from a background FCM isolate.
+  Future<void> reportIncomingCallFromFcm({
+    required String callerName,
+    required String callId,
+    bool hasVideo = false,
+    Map<String, dynamic>? metadata,
+  }) {
+    throw UnimplementedError(
+      'reportIncomingCallFromFcm() has not been implemented.',
+    );
+  }
+
+  /// Remove the native incoming notification / ringtone. Works without a Flutter page.
+  Future<void> dismissIncomingCallAlerts() {
+    throw UnimplementedError(
+      'dismissIncomingCallAlerts() has not been implemented.',
+    );
+  }
+
   Future<void> setMute(bool isMuted) {
     throw UnimplementedError('setMute() has not been implemented.');
   }

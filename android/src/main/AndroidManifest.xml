@@ -5,5 +5,14 @@
     <receiver
       android:name=".IsometrikIncomingActionReceiver"
       android:exported="false" />
+    <activity
+      android:name=".IsometrikIncomingCallActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:launchMode="singleTop"
+      android:showWhenLocked="true"
+      android:taskAffinity=""
+      android:turnScreenOn="true"
+      android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
   </application>
 </manifest>

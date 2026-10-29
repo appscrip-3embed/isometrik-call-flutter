@@ -70,6 +70,7 @@ class IsometrikFlutterCallPlugin :
     private val pendingEvents: MutableList<Map<String, Any?>> = mutableListOf()
 
     companion object {
+        const val EXTRA_INCOMING_CALL_ID = "incomingCallId"
         private const val logTag = "IsometrikFlutterCall"
         private const val notificationChannelId = "isometrik_flutter_call_incoming"
         private const val incomingNotificationId = 48120
@@ -114,6 +115,25 @@ class IsometrikFlutterCallPlugin :
         internal fun dispatchIncomingAction(intent: Intent?) {
             activePluginRef?.get()?.handleIncomingActionIntent(intent)
         }
+
+        fun notifyIncomingCallAcceptedFromLaunch(context: Context, callId: String) {
+            markMeetingAnswered(context, callId)
+            activePluginRef?.get()?.sendEvent("callAnswered", mapOf("callId" to callId))
+        }
+
+        fun notifyIncomingCallRejectedFromLaunch(context: Context, callId: String) {
+            val plugin = activePluginRef?.get()
+            plugin?.stopIncomingRingtone()
+            plugin?.cancelIncomingCallNotification()
+            plugin?.sendEvent("callEnded", mapOf("callId" to callId, "endReason" to "unanswered"))
+        }
+
+        fun launchHostMainActivityForIncomingCall(context: Context, callId: String) {
+            val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            launch.putExtra(EXTRA_INCOMING_CALL_ID, callId)
+            context.startActivity(launch)
+        }
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -139,6 +159,13 @@ class IsometrikFlutterCallPlugin :
             "registerForVoipPushes" -> result.success(null)
             "unregisterVoipToken" -> result.success(null)
             "reportIncomingCall" -> handleReportIncomingCall(call, result)
+            "reportIncomingCallFromFcm" -> handleReportIncomingCall(call, result)
+            "dismissIncomingCallAlerts" -> {
+                stopIncomingRingtone()
+                cancelIncomingCallNotification()
+                IsometrikIncomingCallActivity.finishIfShowing()
+                result.success(null)
+            }
             "startOutgoingCall" -> handleStartOutgoingCall(call, result)
             "endCurrentCall" -> handleEndCurrentCall(call, result)
             "markIncomingCallAccepted" -> {
@@ -257,6 +284,7 @@ class IsometrikFlutterCallPlugin :
             showMissedCallNotification(ctx, incomingCallerName, endedId)
         }
         cancelIncomingCallNotification()
+        IsometrikIncomingCallActivity.finishIfShowing()
         if (activeCallId != null) {
             sendEvent("callEnded", mapOf("callId" to activeCallId))
         }
@@ -515,8 +543,22 @@ class IsometrikFlutterCallPlugin :
                 acceptPendingIntent
             )
         )
+        val ringing = IsometrikIncomingCallActivity.ringingIntent(
+            context,
+            callId,
+            incomingCallerName.ifBlank { "Incoming call" },
+            incomingHasVideo,
+        )
+        val fullScreen = PendingIntent.getActivity(
+            context,
+            104,
+            ringing,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        builder.setFullScreenIntent(fullScreen, true)
         try {
             NotificationManagerCompat.from(context).notify(incomingNotificationId, builder.build())
+            context.startActivity(ringing)
         } catch (e: Throwable) {
             // Never crash host app from notification posting.
             Log.e(logTag, "Failed to post incoming notification", e)

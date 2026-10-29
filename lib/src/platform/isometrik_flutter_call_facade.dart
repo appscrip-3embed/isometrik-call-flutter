@@ -105,6 +105,24 @@ class IsometrikFlutterCall {
     );
   }
 
+  Future<void> reportIncomingCallFromFcm({
+    required String callerName,
+    required String callId,
+    bool hasVideo = false,
+    Map<String, dynamic>? metadata,
+  }) {
+    return IsometrikFlutterCallPlatform.instance.reportIncomingCallFromFcm(
+      callerName: callerName,
+      callId: callId,
+      hasVideo: hasVideo,
+      metadata: metadata,
+    );
+  }
+
+  Future<void> dismissIncomingCallAlerts() {
+    return IsometrikFlutterCallPlatform.instance.dismissIncomingCallAlerts();
+  }
+
   /// Persist answered state so hang-up after a connected call is never missed.
   Future<void> markIncomingCallAccepted({required String callId}) {
     return IsometrikFlutterCallPlatform.instance.markIncomingCallAccepted(

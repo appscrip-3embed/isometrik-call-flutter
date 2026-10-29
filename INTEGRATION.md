@@ -192,6 +192,12 @@ await callSdk.logout();
 
 ---
 
+## 4.3 Bootstrap order
+
+Call `enableAutoCallHandling` before `connectMqtt`. On iOS the plugin is the only `PKPushRegistry`. The host `AppDelegate` must not create a second one. For a silent call-end push when MQTT is not connected, call `IsometrikFlutterCallPlugin.handleCallEndRemoteNotificationPayload` from the notification delegate. That ends CallKit even if Dart has not shown an incoming page.
+
+On Android, a background or killed-state data message should call `reportIncomingCallFromFcm` to show the incoming notification, and `endCurrentCall` with `endReason: unanswered` to dismiss it. Do not require a visible Flutter route for either call.
+
 ## 4.4 Missed calls
 
 A missed-call notification is posted only when an incoming call ends without an accept: remote cancel, local decline, or timeout. After `acceptCall` succeeds, or after the native answer action, the SDK stores the meeting id (capped list on Android prefs and iOS UserDefaults). A later end with `endReason: unanswered` does not show Missed for that meeting.

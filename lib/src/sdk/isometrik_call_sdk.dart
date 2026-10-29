@@ -268,10 +268,13 @@ class IsometrikCallSdk {
     await native.reportOutgoingCallConnected();
   }
 
-  Future<void> _endNativeCallKitSessionIfEnabled() async {
+  Future<void> _endNativeCallKitSessionIfEnabled({String? endReason}) async {
     if (_skipIosCallKit) return;
     await native.cancelScheduledHangup();
-    await native.endCurrentCall();
+    await native.endCurrentCall(
+      callId: meetingRouterContext.callDetailsMeetingId,
+      endReason: endReason,
+    );
   }
 
   bool _isIosCallKitLifecycleEvent(String type) {
@@ -1234,9 +1237,9 @@ class IsometrikCallSdk {
   }
 
   /// End native call + cancel hangup — mirrors `endCall` / disconnect.
-  Future<void> endNativeCall() async {
+  Future<void> endNativeCall({String? endReason}) async {
     final currentMid = meetingRouterContext.callDetailsMeetingId;
-    await _endNativeCallKitSessionIfEnabled();
+    await _endNativeCallKitSessionIfEnabled(endReason: endReason);
     _resetRuntimeCallState(meetingId: currentMid);
   }
 
@@ -1401,7 +1404,11 @@ class IsometrikCallSdk {
           'IsometrikCallSdk: auto-handler — meeting ended ${e.meeting.meetingId}',
         );
         _lastServerEndedMeetingId = e.meeting.meetingId?.trim();
-        await endNativeCall();
+        final neverAnswered =
+            meetingRouterContext.callAnsweredByDeviceId == null;
+        await endNativeCall(
+          endReason: neverAnswered ? 'unanswered' : 'remoteEnded',
+        );
       case IsometrikRoutedMemberLeftOrRejected():
         final leftMid = e.meeting.meetingId?.trim();
         final waitingPreviousMid = _callWaitingPreviousMeetingId?.trim();

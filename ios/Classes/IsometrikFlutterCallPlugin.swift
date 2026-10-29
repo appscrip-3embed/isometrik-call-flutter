@@ -87,6 +87,11 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
   private static let answeredMissedCallMeetingIdsKey =
     "isometrik_flutter_call.answeredMissedCallMeetingIds"
   private static let maxAnsweredMissedCallMeetingIds = 20
+  private static let pendingActiveIncomingMeetingIdKey =
+    "isometrik_flutter_call.pendingActiveIncomingMeetingId"
+  private static let pendingActiveIncomingCallUUIDKey =
+    "isometrik_flutter_call.pendingActiveIncomingCallUUID"
+  private static weak var sharedInstance: IsometrikFlutterCallPlugin?
   /// Hex VoIP credential from PushKit `didUpdate`. Cleared **only** in `didInvalidatePushToken`.
   ///
   /// **Not cleared on Flutter `unregisterVoipToken`** (logout): the OS rarely calls `didUpdate` again until
@@ -123,6 +128,7 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
       binaryMessenger: registrar.messenger()
     )
     let instance = IsometrikFlutterCallPlugin()
+    sharedInstance = instance
     instance.methodChannel = methodChannel
     instance.eventChannel = eventChannel
     eventChannel.setStreamHandler(instance)
@@ -502,6 +508,7 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
       self?.activeCallUUID = uuid
       self?.activeCallId = callId
       self?.activeCallHasVideo = hasVideo
+      Self.persistPendingActiveIncoming(meetingId: callId, uuid: uuid)
       self?.rememberIncomingCallKitDisplayName(callerName)
       self?.sendEvent(type: "incomingCallReported", payload: [
         "callId": callId,
@@ -600,6 +607,25 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
     if uuid == nil, !requestedCallId.isEmpty {
       uuid = callIdByUUID.first(where: { $0.value == requestedCallId })?.key
     }
+    if uuid == nil {
+      let pendingMeeting =
+        UserDefaults.standard.string(forKey: Self.pendingActiveIncomingMeetingIdKey)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let pendingUuidStr =
+        UserDefaults.standard.string(forKey: Self.pendingActiveIncomingCallUUIDKey)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if !pendingUuidStr.isEmpty,
+        let pendingUuid = UUID(uuidString: pendingUuidStr),
+        requestedCallId.isEmpty || pendingMeeting.isEmpty || pendingMeeting == requestedCallId
+      {
+        uuid = pendingUuid
+        if callIdByUUID[pendingUuid] == nil {
+          let id = pendingMeeting.isEmpty ? requestedCallId : pendingMeeting
+          if !id.isEmpty { callIdByUUID[pendingUuid] = id }
+        }
+        activeCallUUID = pendingUuid
+      }
+    }
     guard let uuid else {
       result(nil)
       return
@@ -614,6 +640,47 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
     endCall(uuid: uuid) {
       result(nil)
     }
+  }
+
+  /// AppDelegate silent remote notification entry. Ends CallKit when MQTT is not up.
+  /// Safe to call for non-call payloads.
+  @objc public static func handleCallEndRemoteNotificationPayload(
+    _ userInfo: [AnyHashable: Any]
+  ) {
+    var payload: [String: Any] = [:]
+    for (key, value) in userInfo {
+      if let k = key as? String { payload[k] = value }
+    }
+    let meetingId = (payload["meetingId"] as? String)
+      ?? (payload["callId"] as? String)
+      ?? (payload["call_id"] as? String)
+    let action = payload["action"] as? String ?? ""
+    let ended = action.hasPrefix("meetingEnded") ||
+      action == "joinRequestReject" ||
+      action == "memberLeave" ||
+      payload["callEnded"] as? Bool == true
+    guard ended, let meetingId, !meetingId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return
+    }
+    let runEnd = {
+      sharedInstance?.endCurrentCall(
+        endReason: "unanswered",
+        callId: meetingId,
+        result: { _ in }
+      )
+    }
+    if Thread.isMainThread {
+      runEnd()
+    } else {
+      DispatchQueue.main.async(execute: runEnd)
+    }
+  }
+
+  private static func persistPendingActiveIncoming(meetingId: String, uuid: UUID) {
+    let mid = meetingId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !mid.isEmpty else { return }
+    UserDefaults.standard.set(mid, forKey: pendingActiveIncomingMeetingIdKey)
+    UserDefaults.standard.set(uuid.uuidString, forKey: pendingActiveIncomingCallUUIDKey)
   }
 
   private static func markMeetingAnswered(_ meetingId: String?) {
@@ -1049,6 +1116,7 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
         self.activeCallUUID = uuid
         self.activeCallId = callId
       }
+      Self.persistPendingActiveIncoming(meetingId: callId, uuid: uuid)
       self.nativeCallKitReported = true
       self.rememberIncomingCallKitDisplayName(callerName)
 
