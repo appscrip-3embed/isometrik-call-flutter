@@ -496,7 +496,7 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
     let update = CXCallUpdate()
     update.remoteHandle = CXHandle(type: .generic, value: callerName)
     update.localizedCallerName = callerName
-    update.hasVideo = hasVideo
+    update.hasVideo = Self.allowsVideo(hasVideo)
     let uuid = UUID()
     callIdByUUID[uuid] = callId
     provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
@@ -702,6 +702,17 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
     let ids =
       (UserDefaults.standard.array(forKey: answeredMissedCallMeetingIdsKey) as? [String]) ?? []
     return ids.contains(mid)
+  }
+
+  /// Hosts that ship voice-only calls set `IsometrikForceAudioOnlyCalls` in Info.plist.
+  /// The plugin applies that before Dart starts, so CallKit does not offer video.
+  private static func allowsVideo(_ requested: Bool) -> Bool {
+    if let force = Bundle.main.object(forInfoDictionaryKey: "IsometrikForceAudioOnlyCalls") as? Bool,
+      force
+    {
+      return false
+    }
+    return requested
   }
 
   /// Missed only when the incoming call ended without an accept.
@@ -1066,7 +1077,7 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
     let uuid = UUID()
     let update = CXCallUpdate()
     update.remoteHandle = CXHandle(type: .generic, value: callerName)
-    update.hasVideo = hasVideo
+    update.hasVideo = Self.allowsVideo(hasVideo)
     update.localizedCallerName = callerName
 
     callIdByUUID[uuid] = callId

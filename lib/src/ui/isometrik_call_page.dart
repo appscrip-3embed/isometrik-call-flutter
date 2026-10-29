@@ -31,6 +31,7 @@ class IsometrikCallPageConfig {
     this.statusTextStyle,
     this.peerNameTextStyle,
     this.onCallEnded,
+    this.onCallMinimized,
     this.canRevealIncomingBlur,
     this.unblurButtonText = 'Unblur',
     this.unblurButtonBackgroundColor,
@@ -70,6 +71,9 @@ class IsometrikCallPageConfig {
 
   /// Fires after the call ends (and after auto-pop if enabled).
   final VoidCallback? onCallEnded;
+
+  /// Fires after the in-call route is minimized to the overlay.
+  final VoidCallback? onCallMinimized;
 
   /// Gate for the in-call blur reveal action.
   ///
@@ -451,6 +455,7 @@ class _IsometrikCallPageState extends State<IsometrikCallPage>
         controller: _ctrl,
         config: _cfg,
       );
+      _cfg.onCallMinimized?.call();
     }
     return popped;
   }

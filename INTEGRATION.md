@@ -192,6 +192,12 @@ await callSdk.logout();
 
 ---
 
+## 4.2 Voice-only hosts and minimize
+
+Set `IsometrikForceAudioOnlyCalls` to true in the iOS Info.plist, or `io.isometrik.flutter_call.FORCE_AUDIO_ONLY` in the Android manifest, when the product is audio-only. Native incoming UI reads that before Dart initializes. `IsometrikCallPageConfig.onCallMinimized` runs after the call route shrinks to the overlay. Incoming `metadata` is an opaque string map: the SDK stores and echoes it and does not read keys.
+
+Outgoing ringback audio ships as `outgoing_ringback.wav`.
+
 ## 4.3 Bootstrap order
 
 Call `enableAutoCallHandling` before `connectMqtt`. On iOS the plugin is the only `PKPushRegistry`. The host `AppDelegate` must not create a second one. For a silent call-end push when MQTT is not connected, call `IsometrikFlutterCallPlugin.handleCallEndRemoteNotificationPayload` from the notification delegate. That ends CallKit even if Dart has not shown an incoming page.

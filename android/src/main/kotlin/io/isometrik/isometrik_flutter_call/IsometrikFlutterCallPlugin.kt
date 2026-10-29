@@ -217,6 +217,22 @@ class IsometrikFlutterCallPlugin :
         }
     }
 
+    private fun allowsVideo(requested: Boolean): Boolean {
+        val context = applicationContext ?: return requested
+        return try {
+            val meta = context.packageManager
+                .getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
+                .metaData
+            if (meta?.getBoolean("io.isometrik.flutter_call.FORCE_AUDIO_ONLY") == true) {
+                false
+            } else {
+                requested
+            }
+        } catch (_: Throwable) {
+            requested
+        }
+    }
+
     private fun handleReportIncomingCall(call: MethodCall, result: Result) {
         val callerName = call.argument<String>("callerName")
         val callId = call.argument<String>("callId")
@@ -224,7 +240,7 @@ class IsometrikFlutterCallPlugin :
             result.error("invalid_args", "callerName and callId are required", null)
             return
         }
-        val hasVideo = call.argument<Boolean>("hasVideo") ?: false
+        val hasVideo = allowsVideo(call.argument<Boolean>("hasVideo") ?: false)
         val metadata = normalizeMetadata(call.argument<Any?>("metadata"))
         val incomingDisplayName = resolveIncomingDisplayName(callerName, metadata)
         activeCallId = callId
