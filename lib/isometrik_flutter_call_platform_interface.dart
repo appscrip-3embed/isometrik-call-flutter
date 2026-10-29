@@ -63,8 +63,18 @@ abstract class IsometrikFlutterCallPlatform extends PlatformInterface {
     throw UnimplementedError('startOutgoingCall() has not been implemented.');
   }
 
-  Future<void> endCurrentCall({String? callId}) {
+  Future<void> endCurrentCall({
+    String? callId,
+    String? endReason,
+  }) {
     throw UnimplementedError('endCurrentCall() has not been implemented.');
+  }
+
+  /// Persist that [callId] was answered so a later unanswered end is not "Missed".
+  Future<void> markIncomingCallAccepted({required String callId}) {
+    throw UnimplementedError(
+      'markIncomingCallAccepted() has not been implemented.',
+    );
   }
 
   Future<void> setMute(bool isMuted) {

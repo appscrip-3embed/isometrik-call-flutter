@@ -924,6 +924,9 @@ class IsometrikCallSdk {
       case IsometrikSuccess():
         // Swift `CXAnswerCallAction`: `callAnsweredByDeviceId = ISMDeviceId`.
         meetingRouterContext.callAnsweredByDeviceId = deviceId;
+        unawaited(
+          native.markIncomingCallAccepted(callId: meetingId).catchError((_) {}),
+        );
       case IsometrikFailure():
         break;
     }
@@ -1221,6 +1224,12 @@ class IsometrikCallSdk {
   /// Mark outgoing as connected — mirrors `startTheCall()`.
   Future<void> markOutgoingConnected() async {
     meetingRouterContext.outgoingCallPending = false;
+    final mid = meetingRouterContext.callDetailsMeetingId?.trim() ?? '';
+    if (mid.isNotEmpty) {
+      unawaited(
+        native.markIncomingCallAccepted(callId: mid).catchError((_) {}),
+      );
+    }
     await _reportOutgoingConnectedNativeIfEnabled();
   }
 
