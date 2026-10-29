@@ -95,8 +95,21 @@ class IsometrikFlutterCall {
     );
   }
 
-  Future<void> endCurrentCall({String? callId}) {
-    return IsometrikFlutterCallPlatform.instance.endCurrentCall(callId: callId);
+  Future<void> endCurrentCall({
+    String? callId,
+    String? endReason,
+  }) {
+    return IsometrikFlutterCallPlatform.instance.endCurrentCall(
+      callId: callId,
+      endReason: endReason,
+    );
+  }
+
+  /// Persist answered state so hang-up after a connected call is never missed.
+  Future<void> markIncomingCallAccepted({required String callId}) {
+    return IsometrikFlutterCallPlatform.instance.markIncomingCallAccepted(
+      callId: callId,
+    );
   }
 
   Future<void> setMute(bool isMuted) {

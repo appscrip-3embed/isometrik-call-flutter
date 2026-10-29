@@ -192,6 +192,26 @@ await callSdk.logout();
 
 ---
 
+## 4.4 Missed calls
+
+A missed-call notification is posted only when an incoming call ends without an accept: remote cancel, local decline, or timeout. After `acceptCall` succeeds, or after the native answer action, the SDK stores the meeting id (capped list on Android prefs and iOS UserDefaults). A later end with `endReason: unanswered` does not show Missed for that meeting.
+
+## 4.5 Optional host meeting REST
+
+Set [IsometrikCallSdk.meetingHostDelegate] when the app owns meeting
+create / accept / reject / leave / end and should not call Isometrik
+`meetings/v1/*` for those actions. Leave it null to keep the default APIs.
+
+`startPublishing` may return success with no publish request when create or
+accept already returned LiveKit RTC. The delegate only receives `meetingId`
+and `deviceId`. Put any project-specific ids in your own app, not in the SDK.
+
+```dart
+IsometrikCallSdk.meetingHostDelegate = myHostDelegate;
+```
+
+---
+
 ## 5. REST + outgoing call (full flow)
 
 ```dart

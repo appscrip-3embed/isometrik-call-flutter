@@ -69,8 +69,19 @@ class MethodChannelIsometrikFlutterCall extends IsometrikFlutterCallPlatform {
   }
 
   @override
-  Future<void> endCurrentCall({String? callId}) async {
+  Future<void> endCurrentCall({
+    String? callId,
+    String? endReason,
+  }) async {
     await methodChannel.invokeMethod<void>('endCurrentCall', {
+      if (callId != null && callId.isNotEmpty) 'callId': callId,
+      if (endReason != null && endReason.isNotEmpty) 'endReason': endReason,
+    });
+  }
+
+  @override
+  Future<void> markIncomingCallAccepted({required String callId}) async {
+    await methodChannel.invokeMethod<void>('markIncomingCallAccepted', {
       'callId': callId,
     });
   }

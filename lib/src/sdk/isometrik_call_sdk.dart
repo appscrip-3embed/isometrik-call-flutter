@@ -10,6 +10,7 @@ import '../configuration/isometrik_call_configuration.dart';
 import '../models/models.dart';
 import '../platform/isometrik_flutter_call_facade.dart';
 import '../repositories/auth_repository.dart';
+import '../host/isometrik_meeting_host_delegate.dart';
 import '../repositories/meeting_repository.dart';
 import '../router/isometrik_meeting_router.dart';
 import '../services/isometrik_device_id.dart';
@@ -121,6 +122,10 @@ class IsometrikCallSdk {
   static final IsometrikCallSdk _instance = IsometrikCallSdk._();
   factory IsometrikCallSdk() => _instance;
   static IsometrikCallSdk get instance => _instance;
+
+  /// When set, accept / reject / leave / end / startPublishing use the host
+  /// implementation instead of Isometrik `meetings/v1/*`.
+  static IsometrikMeetingHostDelegate? meetingHostDelegate;
 
   final IsometrikSessionState session = IsometrikSessionState();
   final IsometrikPushKitTokenStore pushKitTokenStore =
@@ -866,10 +871,7 @@ class IsometrikCallSdk {
         IsometrikServerMessageError('Already on another call.'),
       );
     }
-    final accepted = await meetings.acceptCall(
-      meetingId: meetingId,
-      deviceId: deviceId,
-    );
+    final accepted = await acceptCall(meetingId: meetingId);
     switch (accepted) {
       case IsometrikFailure(:final error):
         return IsometrikFailure(error);
@@ -911,14 +913,20 @@ class IsometrikCallSdk {
     if (deviceId == null) {
       return const IsometrikFailure(IsometrikInvalidResponse());
     }
-    final r = await meetings.acceptCall(
-      meetingId: meetingId,
-      deviceId: deviceId,
-    );
+    final host = meetingHostDelegate;
+    final r = host != null
+        ? await host.acceptCall(meetingId: meetingId, deviceId: deviceId)
+        : await meetings.acceptCall(
+            meetingId: meetingId,
+            deviceId: deviceId,
+          );
     switch (r) {
       case IsometrikSuccess():
         // Swift `CXAnswerCallAction`: `callAnsweredByDeviceId = ISMDeviceId`.
         meetingRouterContext.callAnsweredByDeviceId = deviceId;
+        unawaited(
+          native.markIncomingCallAccepted(callId: meetingId).catchError((_) {}),
+        );
       case IsometrikFailure():
         break;
     }
@@ -933,6 +941,10 @@ class IsometrikCallSdk {
     if (deviceId == null) {
       return const IsometrikFailure(IsometrikInvalidResponse());
     }
+    final host = meetingHostDelegate;
+    if (host != null) {
+      return host.rejectCall(meetingId: meetingId, deviceId: deviceId);
+    }
     return meetings.rejectCall(meetingId: meetingId, deviceId: deviceId);
   }
 
@@ -943,7 +955,12 @@ class IsometrikCallSdk {
     if (_leaveInFlightMeetingIds.contains(normalized)) return;
     _leaveInFlightMeetingIds.add(normalized);
     try {
-      await meetings.leaveMeeting(meetingId: normalized);
+      final host = meetingHostDelegate;
+      if (host != null) {
+        await host.leaveMeeting(meetingId: normalized);
+      } else {
+        await meetings.leaveMeeting(meetingId: normalized);
+      }
     } finally {
       _leaveInFlightMeetingIds.remove(normalized);
     }
@@ -970,7 +987,23 @@ class IsometrikCallSdk {
     if (deviceId == null) {
       return const IsometrikFailure(IsometrikInvalidResponse());
     }
+    final host = meetingHostDelegate;
+    if (host != null) {
+      return host.startPublishing(meetingId: meetingId, deviceId: deviceId);
+    }
     return meetings.startPublishing(meetingId: meetingId, deviceId: deviceId);
+  }
+
+  /// Creator / outbound end. Uses [meetingHostDelegate] when set.
+  /// There is no default Isometrik end-meeting call on this path.
+  Future<IsometrikResult<Null>> endMeeting({
+    required String meetingId,
+  }) async {
+    final host = meetingHostDelegate;
+    if (host == null) {
+      return const IsometrikFailure(IsometrikInvalidResponse());
+    }
+    return host.endMeeting(meetingId: meetingId.trim());
   }
 
   /// Mirrors `publishMessage` with string body (use [IsometrikPublishMessage] raw values).
@@ -1191,6 +1224,12 @@ class IsometrikCallSdk {
   /// Mark outgoing as connected — mirrors `startTheCall()`.
   Future<void> markOutgoingConnected() async {
     meetingRouterContext.outgoingCallPending = false;
+    final mid = meetingRouterContext.callDetailsMeetingId?.trim() ?? '';
+    if (mid.isNotEmpty) {
+      unawaited(
+        native.markIncomingCallAccepted(callId: mid).catchError((_) {}),
+      );
+    }
     await _reportOutgoingConnectedNativeIfEnabled();
   }
 

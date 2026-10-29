@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.Ringtone
@@ -77,8 +78,38 @@ class IsometrikFlutterCallPlugin :
         private const val extraDecision = "decision"
         private const val decisionAccept = "accept"
         private const val decisionReject = "reject"
+        private const val prefAnsweredIds = "missed_call_answered_ids"
+        private const val maxAnsweredIds = 20
+        private const val missedChannelId = "isometrik_flutter_call_missed"
         @Volatile
         private var activePluginRef: WeakReference<IsometrikFlutterCallPlugin>? = null
+
+        private fun prefs(context: Context): SharedPreferences =
+            context.getSharedPreferences("isometrik_flutter_call", Context.MODE_PRIVATE)
+
+        fun markMeetingAnswered(context: Context, meetingId: String) {
+            val mid = meetingId.trim()
+            if (mid.isEmpty()) return
+            val ids = prefs(context).getString(prefAnsweredIds, "")
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.toMutableList()
+                ?: mutableListOf()
+            if (ids.contains(mid)) return
+            ids.add(mid)
+            while (ids.size > maxAnsweredIds) ids.removeAt(0)
+            prefs(context).edit().putString(prefAnsweredIds, ids.joinToString(",")).commit()
+        }
+
+        fun wasMeetingAnswered(context: Context, meetingId: String): Boolean {
+            val mid = meetingId.trim()
+            if (mid.isEmpty()) return false
+            return prefs(context).getString(prefAnsweredIds, "")
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.contains(mid) == true
+        }
 
         internal fun dispatchIncomingAction(intent: Intent?) {
             activePluginRef?.get()?.handleIncomingActionIntent(intent)
@@ -109,7 +140,15 @@ class IsometrikFlutterCallPlugin :
             "unregisterVoipToken" -> result.success(null)
             "reportIncomingCall" -> handleReportIncomingCall(call, result)
             "startOutgoingCall" -> handleStartOutgoingCall(call, result)
-            "endCurrentCall" -> handleEndCurrentCall(result)
+            "endCurrentCall" -> handleEndCurrentCall(call, result)
+            "markIncomingCallAccepted" -> {
+                val callId = call.argument<String>("callId")?.trim().orEmpty()
+                val ctx = applicationContext
+                if (callId.isNotEmpty() && ctx != null) {
+                    markMeetingAnswered(ctx, callId)
+                }
+                result.success(null)
+            }
             "setMute" -> handleSetMute(call, result)
             "setSpeaker" -> handleSetSpeaker(call, result)
             "reportOutgoingCallConnected" -> handleReportOutgoingCallConnected(result)
@@ -205,9 +244,18 @@ class IsometrikFlutterCallPlugin :
         result.success(null)
     }
 
-    private fun handleEndCurrentCall(result: Result) {
+    private fun handleEndCurrentCall(call: MethodCall, result: Result) {
         cancelScheduledHangup()
         stopIncomingRingtone()
+        val endReason = call.argument<String>("endReason")?.trim().orEmpty()
+        val requestedId = call.argument<String>("callId")?.trim().orEmpty()
+        val endedId = if (requestedId.isNotEmpty()) requestedId else activeCallId.orEmpty()
+        val ctx = applicationContext
+        val answered = ctx != null && wasMeetingAnswered(ctx, endedId)
+        val outgoing = outgoingCallId != null && outgoingCallId == endedId
+        if (endReason == "unanswered" && !answered && !outgoing && ctx != null && endedId.isNotEmpty()) {
+            showMissedCallNotification(ctx, incomingCallerName, endedId)
+        }
         cancelIncomingCallNotification()
         if (activeCallId != null) {
             sendEvent("callEnded", mapOf("callId" to activeCallId))
@@ -215,6 +263,31 @@ class IsometrikFlutterCallPlugin :
         activeCallId = null
         outgoingCallId = null
         result.success(null)
+    }
+
+    private fun showMissedCallNotification(context: Context, callerName: String?, meetingId: String) {
+        if (wasMeetingAnswered(context, meetingId)) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (manager.getNotificationChannel(missedChannelId) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(missedChannelId, "Missed calls", NotificationManager.IMPORTANCE_DEFAULT)
+                )
+            }
+        }
+        val text = callerName?.trim().takeUnless { it.isNullOrEmpty() }
+            ?.let { "You missed a call from $it" }
+            ?: "You missed a call"
+        val notification = NotificationCompat.Builder(context, missedChannelId)
+            .setSmallIcon(android.R.drawable.sym_call_missed)
+            .setContentTitle("Missed call")
+            .setContentText(text)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(meetingId.hashCode(), notification)
+        } catch (_: Throwable) {
+        }
     }
 
     private fun handleSetMute(call: MethodCall, result: Result) {
@@ -522,6 +595,7 @@ class IsometrikFlutterCallPlugin :
             when {
                 decision == decisionAccept || action == actionAccept -> {
                     Log.d(logTag, "Incoming action: ACCEPT")
+                    activeCallId?.let { markMeetingAnswered(context, it) }
                     cancelScheduledHangup()
                     stopIncomingRingtone()
                     cancelIncomingCallNotification()

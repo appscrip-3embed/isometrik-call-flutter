@@ -4,6 +4,7 @@ import Flutter
 import Foundation
 import PushKit
 import UIKit
+import UserNotifications
 import WebRTC
 
 // MARK: - PushKit diagnostics (UserDefaults ring buffer)
@@ -80,6 +81,12 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
   private var activeCallId: String?
   private var outgoingCallUUID: UUID?
   private var callIdByUUID: [UUID: String] = [:]
+  /// Incoming CallKit UUIDs answered in this process.
+  private var answeredCallUUIDs: Set<UUID> = []
+  private var missedCallNotifiedCallUUIDs: Set<UUID> = []
+  private static let answeredMissedCallMeetingIdsKey =
+    "isometrik_flutter_call.answeredMissedCallMeetingIds"
+  private static let maxAnsweredMissedCallMeetingIds = 20
   /// Hex VoIP credential from PushKit `didUpdate`. Cleared **only** in `didInvalidatePushToken`.
   ///
   /// **Not cleared on Flutter `unregisterVoipToken`** (logout): the OS rarely calls `didUpdate` again until
@@ -214,7 +221,22 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
       let hasVideo = args["hasVideo"] as? Bool ?? false
       startOutgoingCall(calleeName: calleeName, callId: callId, hasVideo: hasVideo, metadata: args["metadata"] as? [String: Any] ?? [:], result: result)
     case "endCurrentCall":
-      endCurrentCall(result: result)
+      let args = call.arguments as? [String: Any] ?? [:]
+      let endReason = args["endReason"] as? String
+      let callId = (args["callId"] as? String)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      endCurrentCall(endReason: endReason, callId: callId, result: result)
+    case "markIncomingCallAccepted":
+      let args = call.arguments as? [String: Any] ?? [:]
+      let callId = (args["callId"] as? String)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if !callId.isEmpty {
+        Self.markMeetingAnswered(callId)
+        if let uuid = callIdByUUID.first(where: { $0.value == callId })?.key {
+          answeredCallUUIDs.insert(uuid)
+        }
+      }
+      result(nil)
     case "setMute":
       let args = call.arguments as? [String: Any] ?? [:]
       setMute(args["isMuted"] as? Bool ?? false, result: result)
@@ -567,14 +589,86 @@ public class IsometrikFlutterCallPlugin: NSObject, FlutterPlugin, FlutterStreamH
     }
   }
 
-  private func endCurrentCall(result: @escaping FlutterResult) {
+  private func endCurrentCall(
+    endReason: String? = nil,
+    callId: String? = nil,
+    result: @escaping FlutterResult
+  ) {
     cancelScheduledHangup()
-    guard let uuid = activeCallUUID else {
+    let requestedCallId = callId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    var uuid = activeCallUUID ?? outgoingCallUUID
+    if uuid == nil, !requestedCallId.isEmpty {
+      uuid = callIdByUUID.first(where: { $0.value == requestedCallId })?.key
+    }
+    guard let uuid else {
       result(nil)
       return
     }
+    let endedCallId = callIdForAction(uuid: uuid) ?? (requestedCallId.isEmpty ? nil : requestedCallId)
+    let alreadyAnswered =
+      answeredCallUUIDs.contains(uuid) || Self.wasMeetingAnswered(endedCallId)
+    let isOutgoing = outgoingCallUUID == uuid
+    if endReason == "unanswered" && !alreadyAnswered && !isOutgoing {
+      maybeScheduleMissedCallNotification(for: uuid)
+    }
     endCall(uuid: uuid) {
       result(nil)
+    }
+  }
+
+  private static func markMeetingAnswered(_ meetingId: String?) {
+    let mid = meetingId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !mid.isEmpty else { return }
+    var ids =
+      (UserDefaults.standard.array(forKey: answeredMissedCallMeetingIdsKey) as? [String]) ?? []
+    if ids.contains(mid) { return }
+    ids.append(mid)
+    while ids.count > maxAnsweredMissedCallMeetingIds {
+      ids.removeFirst()
+    }
+    UserDefaults.standard.set(ids, forKey: answeredMissedCallMeetingIdsKey)
+  }
+
+  private static func wasMeetingAnswered(_ meetingId: String?) -> Bool {
+    let mid = meetingId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !mid.isEmpty else { return false }
+    let ids =
+      (UserDefaults.standard.array(forKey: answeredMissedCallMeetingIdsKey) as? [String]) ?? []
+    return ids.contains(mid)
+  }
+
+  /// Missed only when the incoming call ended without an accept.
+  private func maybeScheduleMissedCallNotification(for uuid: UUID) {
+    let meetingId = callIdForAction(uuid: uuid)
+    let wasAnswered =
+      answeredCallUUIDs.contains(uuid) || Self.wasMeetingAnswered(meetingId)
+    let isOutgoing = outgoingCallUUID == uuid
+    guard !isOutgoing && !wasAnswered else { return }
+    guard !missedCallNotifiedCallUUIDs.contains(uuid) else { return }
+    missedCallNotifiedCallUUIDs.insert(uuid)
+    let callerName = lastCallKitIncomingDisplayName ?? ""
+    let center = UNUserNotificationCenter.current()
+    center.getNotificationSettings { settings in
+      guard settings.authorizationStatus == .authorized ||
+        settings.authorizationStatus == .provisional else {
+        return
+      }
+      let content = UNMutableNotificationContent()
+      content.title = "Missed call"
+      content.body = callerName.isEmpty ? "You missed a call" : "You missed a call from \(callerName)"
+      content.sound = .default
+      var userInfo: [String: String] = ["type": "missedCall"]
+      let meeting = meetingId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if !meeting.isEmpty {
+        userInfo["meetingId"] = meeting
+      }
+      content.userInfo = userInfo
+      let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1.5, repeats: false)
+      let identifier = meeting.isEmpty
+        ? "isometrik_missed_call_\(Int(Date().timeIntervalSince1970))"
+        : "isometrik_missed_call_\(meeting)"
+      let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+      center.add(request, withCompletionHandler: nil)
     }
   }
 
@@ -1090,6 +1184,8 @@ extension IsometrikFlutterCallPlugin: CXProviderDelegate {
 
   public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
     let answeredCallId = callIdForAction(uuid: action.callUUID)
+    answeredCallUUIDs.insert(action.callUUID)
+    Self.markMeetingAnswered(answeredCallId)
     activeCallUUID = action.callUUID
     activeCallId = answeredCallId
     sendEvent(type: "callAnswered", payload: [
@@ -1108,6 +1204,12 @@ extension IsometrikFlutterCallPlugin: CXProviderDelegate {
   public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
     IsometrikVoipAudioCoordinator.shared.endCall()
     let endedCallId = callIdForAction(uuid: action.callUUID)
+    let wasAnswered =
+      answeredCallUUIDs.contains(action.callUUID) || Self.wasMeetingAnswered(endedCallId)
+    let isOutgoing = outgoingCallUUID == action.callUUID
+    if !wasAnswered && !isOutgoing {
+      maybeScheduleMissedCallNotification(for: action.callUUID)
+    }
     sendEvent(type: "callEnded", payload: ["callId": endedCallId as Any])
     callIdByUUID[action.callUUID] = nil
     if callIdByUUID.isEmpty {
