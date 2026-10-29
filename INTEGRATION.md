@@ -192,6 +192,38 @@ await callSdk.logout();
 
 ---
 
+## 4.2 Voice-only hosts and minimize
+
+Set `IsometrikForceAudioOnlyCalls` to true in the iOS Info.plist, or `io.isometrik.flutter_call.FORCE_AUDIO_ONLY` in the Android manifest, when the product is audio-only. Native incoming UI reads that before Dart initializes. `IsometrikCallPageConfig.onCallMinimized` runs after the call route shrinks to the overlay. Incoming `metadata` is an opaque string map: the SDK stores and echoes it and does not read keys.
+
+Outgoing ringback audio ships as `outgoing_ringback.wav`.
+
+## 4.3 Bootstrap order
+
+Call `enableAutoCallHandling` before `connectMqtt`. On iOS the plugin is the only `PKPushRegistry`. The host `AppDelegate` must not create a second one. For a silent call-end push when MQTT is not connected, call `IsometrikFlutterCallPlugin.handleCallEndRemoteNotificationPayload` from the notification delegate. That ends CallKit even if Dart has not shown an incoming page.
+
+On Android, a background or killed-state data message should call `reportIncomingCallFromFcm` to show the incoming notification, and `endCurrentCall` with `endReason: unanswered` to dismiss it. Do not require a visible Flutter route for either call.
+
+## 4.4 Missed calls
+
+A missed-call notification is posted only when an incoming call ends without an accept: remote cancel, local decline, or timeout. After `acceptCall` succeeds, or after the native answer action, the SDK stores the meeting id (capped list on Android prefs and iOS UserDefaults). A later end with `endReason: unanswered` does not show Missed for that meeting.
+
+## 4.5 Optional host meeting REST
+
+Set [IsometrikCallSdk.meetingHostDelegate] when the app owns meeting
+create / accept / reject / leave / end and should not call Isometrik
+`meetings/v1/*` for those actions. Leave it null to keep the default APIs.
+
+`startPublishing` may return success with no publish request when create or
+accept already returned LiveKit RTC. The delegate only receives `meetingId`
+and `deviceId`. Put any project-specific ids in your own app, not in the SDK.
+
+```dart
+IsometrikCallSdk.meetingHostDelegate = myHostDelegate;
+```
+
+---
+
 ## 5. REST + outgoing call (full flow)
 
 ```dart
