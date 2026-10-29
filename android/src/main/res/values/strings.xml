@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="isometrik_incoming_call_label">Incoming audio call</string>
+    <string name="isometrik_incoming_video_call_label">Incoming video call</string>
+    <string name="isometrik_incoming_accept">Accept</string>
+    <string name="isometrik_incoming_reject">Reject</string>
+</resources>
