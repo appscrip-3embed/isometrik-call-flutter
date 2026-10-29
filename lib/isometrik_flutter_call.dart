@@ -14,6 +14,7 @@ export 'src/platform/isometrik_flutter_call_facade.dart';
 export 'src/repositories/auth_repository.dart';
 export 'src/repositories/meeting_repository.dart';
 export 'src/router/isometrik_meeting_router.dart';
+export 'src/host/isometrik_meeting_host_delegate.dart';
 export 'src/sdk/isometrik_call_sdk.dart';
 export 'src/services/isometrik_device_id.dart';
 export 'src/services/isometrik_mqtt_service.dart';
